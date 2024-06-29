@@ -16,17 +16,17 @@ LLM分词器的构建方式有两种：
 ## 预训练
 
 ### 准备训练数据
-预训练数据推荐
-MNBVC
-地址：https://github.com/esbatmop/MNBVC
-数据集说明：里面有大佬整理的33T 预计达到GPT3.5的40T数据
-超大规模中文语料集，不但包括主流文化，也包括各个小众文化甚至火星文的数据。MNBVC数据集包括新闻、作文、小说、书籍、杂志、论文、台词、帖子、wiki、古诗、歌词、商品介绍、笑话、糗事、聊天记录等一切形式的纯文本中文数据。数据均来源于互联网收集，且在持续更新中。
-WuDaoCorporaText
-地址：https://data.baai.ac.cn/details/WuDaoCorporaText
-数据集说明：WuDaoCorpora是北京智源人工智能研究院（智源研究院）构建的大规模、高质量数据集，用于支撑大模型训练研究。目前由文本、对话、图文对、视频文本对四部分组成，分别致力于构建微型语言世界、提炼对话核心规律、打破图文模态壁垒、建立视频文字关联，为大模型训练提供坚实的数据支撑。
-Awesome Chinese LLM
-地址：https://github.com/HqWu-HITCS/Awesome-Chinese-LLM
-数据集说明：数据集合
+预训练数据推荐  
+MNBVC  
+地址：https://github.com/esbatmop/MNBVC  
+数据集说明：里面有大佬整理的33T 预计达到GPT3.5的40T数据  
+超大规模中文语料集，不但包括主流文化，也包括各个小众文化甚至火星文的数据。MNBVC数据集包括新闻、作文、小说、书籍、杂志、论文、台词、帖子、wiki、古诗、歌词、商品介绍、笑话、糗事、聊天记录等一切形式的纯文本中文数据。数据均来源于互联网收集，且在持续更新中。  
+WuDaoCorporaText  
+地址：https://data.baai.ac.cn/details/WuDaoCorporaText  
+数据集说明：WuDaoCorpora是北京智源人工智能研究院（智源研究院）构建的大规模、高质量数据集，用于支撑大模型训练研究。目前由文本、对话、图文对、视频文本对四部分组成，分别致力于构建微型语言世界、提炼对话核心规律、打破图文模态壁垒、建立视频文字关联，为大模型训练提供坚实的数据支撑。  
+Awesome Chinese LLM  
+地址：https://github.com/HqWu-HITCS/Awesome-Chinese-LLM  
+数据集说明：数据集合  
 ### 处理训练数据
 说明：训练数据质量是影响模型性能最大的因素
 #### 文本去重
