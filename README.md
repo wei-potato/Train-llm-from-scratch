@@ -1,10 +1,10 @@
 # Train-llm-from-scratch
-从头开始训练一个LLM,模型大小为6B(可以根据自己的算力调节模型大小)，会使用deepspeed进行分布式训练
+从头开始训练一个LLM,模型大小为6B(可以通过配置参数根据自己的算力调节模型大小)，会使用deepspeed进行分布式训练
 经过pretrain和sft
 验证llm学习知识、理解语言、回答问题的能力
 在每个步骤会有一个document解释代码和关键步骤，解析原理，方便学习
 ## 环境搭建
-cuda 版本 11.2
+cuda 版本 12.1
 依赖见requirements
 
 ## 分词器（Tokenizer）：
@@ -16,24 +16,29 @@ LLM分词器的构建方式有两种：
 ## 预训练
 
 ### 准备训练数据
-预训练数据推荐  
+预训练数据推荐
 MNBVC  
 地址：https://github.com/esbatmop/MNBVC  
 数据集说明：里面有大佬整理的33T 预计达到GPT3.5的40T数据  
-超大规模中文语料集，不但包括主流文化，也包括各个小众文化甚至火星文的数据。MNBVC数据集包括新闻、作文、小说、书籍、杂志、论文、台词、帖子、wiki、古诗、歌词、商品介绍、笑话、糗事、聊天记录等一切形式的纯文本中文数据。数据均来源于互联网收集，且在持续更新中。  
+超大规模中文语料集，不但包括主流文化，也包括各个小众文化甚至火星文的数据。MNBVC数据集包括新闻、作文、小说、书籍、杂志、论文、台词、帖子、wiki、古诗、歌词、商品介绍、笑话、糗事、聊天记录等一切形式的纯文本中文数据。数据均来源于互联网收集，且在持续更新中。    
+data_process/spark.py 使用spark将MNBVC数据处理成训练格式
+
 WuDaoCorporaText  
 地址：https://data.baai.ac.cn/details/WuDaoCorporaText  
 数据集说明：WuDaoCorpora是北京智源人工智能研究院（智源研究院）构建的大规模、高质量数据集，用于支撑大模型训练研究。目前由文本、对话、图文对、视频文本对四部分组成，分别致力于构建微型语言世界、提炼对话核心规律、打破图文模态壁垒、建立视频文字关联，为大模型训练提供坚实的数据支撑。  
+
 Awesome Chinese LLM  
 地址：https://github.com/HqWu-HITCS/Awesome-Chinese-LLM  
-数据集说明：数据集合  
+
+SKYWORK
+数据集说明：天工开源的150B数据，质量很高
+地址：https://huggingface.co/datasets/Skywork/SkyPile-150B
 ### 处理训练数据
 说明：训练数据质量是影响模型性能最大的因素
 #### 文本去重
 不做会导致的后果：存在语义相似的训练数据会导致模型的生成重复，即重复生成同一个字
 #### 其他数据处理工具
 地址：https://github.com/aplmikex/deduplication_mnbvc  
-
 作用： 语料去重
 
 清除从不同来源提交给MNBVC项目的文件中，文件完全一致的。  
@@ -63,10 +68,10 @@ Awesome Chinese LLM
 去除中文占比低的段落  
 去除编码异常段落  
 
-## 预训练
-参考document/预训练
-[预训练原理](documents/预训练原理.md)
-
+## 详细文档
+[预训练](documents/预训练原理.md)  
+[全量微调](documents/SFT.md)
 ## 项目和书籍参考
-https://github.com/DLLXW/baby-llama2-chinese
-https://github.com/LlamaFamily/Llama-Chinese
+https://github.com/DLLXW/baby-llama2-chinese  
+https://github.com/LlamaFamily/Llama-Chinese  
+https://github.com/SkyworkAI/Skywork

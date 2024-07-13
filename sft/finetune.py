@@ -24,18 +24,25 @@ import logging
 import math
 import os
 import sys
+import random
 from dataclasses import dataclass, field
-from torchdata.datapipes.iter import IterDataPipe, IterableWrapper
 from itertools import chain
 import deepspeed
-from typing import Optional, List
+from typing import Optional, List, Union
 
 import datasets
-import pandas as pd
 import evaluate
 import torch
 from datasets import load_dataset
-from datasets.combine import interleave_datasets
+from peft import (  # noqa: E402
+    LoraConfig,
+    PeftModel,
+    get_peft_model,
+    get_peft_model_state_dict,
+    prepare_model_for_int8_training,
+    prepare_model_for_kbit_training,
+    set_peft_model_state_dict,
+)
 import transformers
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 from transformers import (
@@ -51,15 +58,16 @@ from transformers import (
     Trainer,
     TrainingArguments,
     default_data_collator,
+    BitsAndBytesConfig,
     is_torch_tpu_available,
     set_seed,
 )
-import datetime
 from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
-from datasets import interleave_datasets
+
+import pdb
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 # check_min_version("4.27.0.dev0")
@@ -126,6 +134,7 @@ class ModelArguments:
             )
         },
     )
+
     torch_dtype: Optional[str] = field(
         default=None,
         metadata={
@@ -149,14 +158,16 @@ class DataTrainingArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
-
+    train_on_inputs: bool = field(
+        default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
+    )
     dataset_name: Optional[str] = field(
         default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
     )
     dataset_config_name: Optional[str] = field(
         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
-    train_files: Optional[List[str]] or str = field(default=None,
+    train_files: Optional[List[str]] = field(default=None,
                                              metadata={"help": "The input training data file (a text file)."})
     validation_files: Optional[List[str]] = field(
         default=None,
@@ -231,6 +242,7 @@ def main():
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    # pdb.set_trace()
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
@@ -298,32 +310,27 @@ def main():
         data_files = {}
         dataset_args = {}
         if data_args.train_files is not None:
-            print(data_args.train_files)
+            print("train_files:", data_args.train_files)
             data_files["train"] = data_args.train_files
             print('训练文件总个数', len(data_args.train_files))
         if data_args.validation_files is not None:
             data_files["validation"] = data_args.validation_files
         extension = (
-            data_files["train"][0].split(".")[-1]
-            if data_files["train"] is not None
+            data_args.train_files[0].split(".")[-1]
+            if data_args.train_files is not None
             else data_args.validation_files.split(".")[-1]
         )
         if extension == "txt":
             extension = "text"
             dataset_args["keep_linebreaks"] = data_args.keep_linebreaks
-        elif extension == "jsonl":
-            extension = "json"
-
+        print("extension", extension)
         raw_datasets = load_dataset(
-            extension,
+            'json',
             data_files=data_files,
-            streaming=data_args.streaming,
             cache_dir=os.path.join(training_args.output_dir, 'dataset_cache'),
             use_auth_token=True if model_args.use_auth_token else None,
             **dataset_args,
         )
-        if data_args.streaming:
-            raw_datasets = raw_datasets.shuffle(seed=training_args.seed, buffer_size=1000000)
         # If no validation data is there, validation_split_percentage will be used to divide the dataset.
         if "validation" not in raw_datasets.keys():
             raw_datasets["validation"] = load_dataset(
@@ -369,12 +376,12 @@ def main():
             config.update_from_string(model_args.config_overrides)
             logger.info(f"New config: {config}")
 
-    print(training_args.local_rank, 'start load tokenizer')
     tokenizer_kwargs = {
         "cache_dir": model_args.cache_dir,
         "use_fast": model_args.use_fast_tokenizer,
         "revision": model_args.model_revision,
         "use_auth_token": True if model_args.use_auth_token else None,
+        "padding_side": 'left'
     }
     if model_args.tokenizer_name:
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
@@ -385,166 +392,130 @@ def main():
             "You are instantiating a new tokenizer from scratch. This is not supported by this script."
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
-    print(training_args.local_rank, 'end load tokenizer')
-    print(training_args.local_rank, 'start load model')
+    tokenizer.pad_token = tokenizer.eos_token
     if model_args.model_name_or_path:
         torch_dtype = (
             model_args.torch_dtype
             if model_args.torch_dtype in ["auto", None]
             else getattr(torch, model_args.torch_dtype)
         )
+        print(torch_dtype)
+        torch_dtype = torch.float16
         model = AutoModelForCausalLM.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
             cache_dir=model_args.cache_dir,
             revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            torch_dtype=torch_dtype,
             trust_remote_code=True,
             use_flash_attention_2=True,
-            use_auth_token=True if model_args.use_auth_token else None,
+            device_map={"": int(os.environ.get("LOCAL_RANK") or 0)}
         )
+        # model = prepare_model_for_int8_training(model, output_embedding_layer_name="embed_out", layer_norm_names=[])
+
     else:
-        model = AutoModelForCausalLM.from_config(config, trust_remote_code=True)
+        model = AutoModelForCausalLM.from_config(config)
         n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
         logger.info(f"Training new model from scratch - Total size={n_params / 2 ** 20:.2f}M params")
-        print("模型结构", model)
-    print(training_args.local_rank, 'end load model')
+
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
+
     # Preprocessing the datasets.
     # First we tokenize all the texts.
     if training_args.do_train:
-        if data_args.streaming:
-            dataset_head = raw_datasets["train"].take(3)
-            print(list(dataset_head))
-            column_names = list(list(dataset_head)[0].keys())
-        else:
-            column_names = list(raw_datasets["train"].features)
+        column_names = list(raw_datasets["train"].features)
     else:
-        if data_args.streaming:
-            dataset_head = raw_datasets["validation"].take(3)
-            column_names = list(list(dataset_head)[0].keys())
-        else:
-            column_names = list(raw_datasets["validation"].features)
-    print(column_names)
-    text_column_name = "text" if "text" in column_names else column_names[0]
+        column_names = list(raw_datasets["validation"].features)
 
+    train_on_inputs = True
+    if len(column_names) == 1:
+        text_column_name = "text" if "text" in column_names else column_names[0]
+    elif len(column_names) == 2:
+        input_column_name = 'input' if 'input' in column_names else column_names[0]
+        target_column_name = 'target' if 'target' in column_names else column_names[0]
+        train_on_inputs = False
+    else:
+        raise ValueError('输入文件列数不对')
+    print('train_on_inputs', train_on_inputs)
     # since this will be pickled to avoid _LazyModule error in Hasher force logger loading before tokenize_function
     tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
 
     def tokenize_function(examples):
         with CaptureLogger(tok_logger) as cl:
-            output = tokenizer([item for item in examples[text_column_name]])
+            output = tokenizer([item for item in examples[text_column_name]], truncation=True,
+                               max_length=data_args.block_size, padding=False, return_tensors=None)
+            output['labels'] = output['input_ids'].copy()
         return output
 
-    print("Running tokenizer on dataset 开始")
-    #     with training_args.main_process_first(desc="dataset map tokenization"):
-    if not data_args.streaming:
-        print("非流式处理")
-        print("raw_datasets:", raw_datasets)
-        tokenized_datasets = raw_datasets.map(
-            tokenize_function,
-            batched=True,
-            num_proc=data_args.preprocessing_num_workers,
-            remove_columns=column_names,
-            load_from_cache_file=not data_args.overwrite_cache,
-            #                 load_from_cache_file=False,
-            desc="Running tokenizer on dataset",
-        )
-    else:
-        print("流式处理")
-        tokenized_datasets = raw_datasets.map(
-            tokenize_function,
-            batched=True,
-            load_from_cache_file=False,
-            remove_columns=column_names,
-            batch_size=10,
-        )
-    print("Running tokenizer on dataset 结束")
-    if data_args.block_size is None:
-        block_size = tokenizer.model_max_length
-        if block_size > 1024:
-            logger.warning(
-                "The chosen tokenizer supports a `model_max_length` that is longer than the default `block_size` value"
-                " of 1024. If you would like to use a longer `block_size` up to `tokenizer.model_max_length` you can"
-                " override this default with `--block_size xxx`."
-            )
-            block_size = 1024
-    else:
-        if data_args.block_size > tokenizer.model_max_length:
-            logger.warning(
-                f"The block_size passed ({data_args.block_size}) is larger than the maximum length for the model"
-                f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
-            )
-        block_size = min(data_args.block_size, tokenizer.model_max_length)
-
-    # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
-    def group_texts(examples):
-        # Concatenate all texts.
-        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
-        # concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
-        total_length = len(concatenated_examples[list(examples.keys())[0]])
-        # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
-        # customize this part to your needs.
-        if total_length >= block_size:
-            total_length = (total_length // block_size) * block_size
-        # Split by chunks of max_len.
-        result = {
-            k: [t[i: i + block_size] for i in range(0, total_length, block_size)]
-            for k, t in concatenated_examples.items()
-        }
-        # print(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        logger.info("group texts input examples length%d after_group size%d" % (
-        len(examples['input_ids']), len(result["input_ids"])))
+    def tokenize(prompt):
+        result = tokenizer(prompt, truncation=True, max_length=data_args.block_size, padding=False, return_tensors=None)
         result["labels"] = result["input_ids"].copy()
         return result
 
-    # Note that with `batched=True`, this map processes 1,000 texts together, so group_texts throws away a remainder
-    # for each of those groups of 1,000 texts. You can adjust that batch_size here but a higher value might be slower
-    # to preprocess.
-    #
-    # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
-    # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
-    print("开始main_process_first")
-    #     with training_args.main_process_first(desc="grouping texts together"):
-    if not data_args.streaming:
-        lm_datasets = tokenized_datasets.map(
-            group_texts,
-            batched=True,
-            num_proc=data_args.preprocessing_num_workers,
-            load_from_cache_file=not data_args.overwrite_cache,
-            desc=f"Grouping texts in chunks of {block_size}",
-            batch_size=10,
-        )
-        print("结束main_process_first")
+    def generate_and_tokenize_prompt(data_point):
+        input_text = data_point[input_column_name]
+        target_text = data_point[target_column_name]
+        full_prompt = input_text + target_text
+        tokenized_full_prompt = tokenize(full_prompt)
+        if not train_on_inputs:
+            user_prompt = input_text
+            tokenized_user_prompt = tokenize(user_prompt)
+            user_prompt_len = len(tokenized_user_prompt["input_ids"])
+            tokenized_full_prompt["labels"] = [
+                                                  -100
+                                              ] * user_prompt_len + tokenized_full_prompt["labels"][
+                                                                    user_prompt_len:
+                                                                    ]
+        return tokenized_full_prompt
+
+    with training_args.main_process_first(desc="dataset map tokenization"):
+        if not data_args.streaming:
+            tokenized_datasets = raw_datasets.map(
+                tokenize_function if train_on_inputs == True else generate_and_tokenize_prompt,
+                batched=True if train_on_inputs == True else False,
+                num_proc=data_args.preprocessing_num_workers,
+                remove_columns=column_names,
+                load_from_cache_file=not data_args.overwrite_cache,
+                desc="Running tokenizer on dataset",
+            )
+        else:
+            tokenized_datasets = raw_datasets.map(
+                tokenize_function if train_on_inputs == True else generate_and_tokenize_prompt,
+                batched=True if train_on_inputs == True else False,
+                remove_columns=column_names,
+            )
+
+    if data_args.block_size is None:
+        block_size = tokenizer.model_max_length
+        if block_size > 2048:
+            block_size = 2048
     else:
-        lm_datasets = tokenized_datasets.map(
-            group_texts,
-            batched=True,
-            batch_size=60000,
-        )
-    print(training_args.local_rank, 'start select train_dataset')
+        block_size = min(data_args.block_size, tokenizer.model_max_length)
+
     if training_args.do_train:
         if "train" not in tokenized_datasets:
             raise ValueError("--do_train requires a train dataset")
-        train_dataset = lm_datasets["train"]
-        if data_args.max_train_samples is not None and data_args.streaming == False:
+        train_dataset = tokenized_datasets["train"]
+        if data_args.max_train_samples is not None:
             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
             train_dataset = train_dataset.select(range(max_train_samples))
-    print(training_args.local_rank, 'end select train_dataset')
+        for index in random.sample(range(len(train_dataset)), 3):
+            logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+        train_dataset = train_dataset.shuffle(seed=training_args.seed)
 
     if training_args.do_eval:
         if "validation" not in tokenized_datasets:
             raise ValueError("--do_eval requires a validation dataset")
-        print(training_args.local_rank, 'start select eval_dataset')
-        eval_dataset = lm_datasets["validation"]
-        if data_args.max_eval_samples is not None and data_args.streaming == False:
+        eval_dataset = tokenized_datasets["validation"]
+        if data_args.max_eval_samples is not None:
             max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
             eval_dataset = eval_dataset.select(range(max_eval_samples))
-        print(training_args.local_rank, 'end select eval_dataset')
 
         def preprocess_logits_for_metrics(logits, labels):
             if isinstance(logits, tuple):
@@ -553,63 +524,70 @@ def main():
                 logits = logits[0]
             return logits.argmax(dim=-1)
 
-        print(training_args.local_rank, 'start load metric')
         metric = evaluate.load("accuracy.py")
-        print(training_args.local_rank, 'end load metric')
 
         def compute_metrics(eval_preds):
             preds, labels = eval_preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics but we need to shift the labels
             labels = labels[:, 1:].reshape(-1)
+            # .reshape(-1)
             preds = preds[:, :-1].reshape(-1)
+            # .reshape(-1)
+            # print(labels.shape)
+            # true_predictions = [
+            #     [p for (p, l) in zip(pred, gold_label) if l != -100]
+            #     for pred, gold_label in zip(preds, labels)
+            # ]
+            # true_labels = [
+            #     [l for (p, l) in zip(pred, gold_label) if l != -100]
+            #     for pred, gold_label in zip(preds, labels)
+            # ]
+            # preds = np.array(true_predictions).reshape(-1)
+            # labels = np.array(true_labels).reshape(-1)
             return metric.compute(predictions=preds, references=labels)
 
-    print(training_args.local_rank, 'Initialize our Trainer')
+    # Initialize our Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=IterableWrapper(train_dataset) if training_args.do_train else None,
-        eval_dataset=IterableWrapper(eval_dataset) if training_args.do_eval else None,
+        train_dataset=train_dataset if training_args.do_train else None,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
         tokenizer=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
-        data_collator=default_data_collator,
+        data_collator=transformers.DataCollatorForSeq2Seq(
+            tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True
+        ),
         compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
-        # callbacks=([SavePeftModelCallback] if isinstance(model, PeftModel) else None),
     )
 
+    # Training
     if training_args.do_train:
         checkpoint = None
         if training_args.resume_from_checkpoint is not None:
             checkpoint = training_args.resume_from_checkpoint
         elif last_checkpoint is not None:
             checkpoint = last_checkpoint
-        print("checkpoint:", checkpoint)
+
         print(training_args.local_rank, 'start train')
-        print("Starting training...")
-        try:
-            train_result = trainer.train(resume_from_checkpoint=checkpoint)
-            print("Training completed successfully")
-        except Exception as e:
-            print(f"Error during training: {str(e)}")
-            raise
-        print("trainer.train(resume_from_checkpoint=checkpoint)")
+
+        if torch.__version__ >= "2" and sys.platform != "win32":
+            model = torch.compile(model)
+
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
-        print("trainer.save_model 结束")
+
         metrics = train_result.metrics
-        print("train_result.metrics")
 
         max_train_samples = (
             data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
         )
-        print("if data_args.max_train_samples is not None else len(train_dataset)")
         metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
-        print("trainer.save_metrics")
         trainer.save_state()
-        print("trainer.save_state()")
 
     # Evaluation
     if training_args.do_eval:
