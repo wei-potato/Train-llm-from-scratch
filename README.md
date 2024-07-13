@@ -30,9 +30,9 @@ WuDaoCorporaText
 Awesome Chinese LLM  
 地址：https://github.com/HqWu-HITCS/Awesome-Chinese-LLM  
 
-SKYWORK
-数据集说明：天工开源的150B数据，质量很高
-地址：https://huggingface.co/datasets/Skywork/SkyPile-150B
+SKYWORK  
+数据集说明：天工开源的150B数据，质量很高  
+地址：https://huggingface.co/datasets/Skywork/SkyPile-150B  
 ### 处理训练数据
 说明：训练数据质量是影响模型性能最大的因素
 #### 文本去重
