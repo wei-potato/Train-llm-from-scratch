@@ -70,14 +70,14 @@ SKYWORK
 去除编码异常段落  
 
 ### SFT 数据推荐
-alpaca-zh     
-地址：https://huggingface.co/datasets/shibing624/alpaca-zh
-BelleGroup  
-地址：https://huggingface.co/datasets/BelleGroup/train_1M_CN 
-firefly    
-地址：https://huggingface.co/datasets/YeungNLP/firefly-train-1.1M  
-COIG-CQIA  
-地址：https://huggingface.co/datasets/m-a-p/COIG-CQIA
+alpaca-zh       
+地址：https://huggingface.co/datasets/shibing624/alpaca-zh  
+BelleGroup    
+地址：https://huggingface.co/datasets/BelleGroup/train_1M_CN   
+firefly      
+地址：https://huggingface.co/datasets/YeungNLP/firefly-train-1.1M    
+COIG-CQIA    
+地址：https://huggingface.co/datasets/m-a-p/COIG-CQIA  
 
 
 
