@@ -15,7 +15,7 @@ LLM分词器的构建方式有两种：
 
 ## 预训练
 
-### 准备训练数据
+### 准备预训练数据 
 预训练数据推荐
 MNBVC  
 地址：https://github.com/esbatmop/MNBVC  
@@ -40,6 +40,7 @@ SKYWORK
 #### 其他数据处理工具
 地址：https://github.com/aplmikex/deduplication_mnbvc  
 作用： 语料去重
+
 
 清除从不同来源提交给MNBVC项目的文件中，文件完全一致的。  
 找出不同来源，不同渠道导致有细微差别的同一文件，并打上标签，如在不同盗版网站上的同一个小说。  
@@ -67,6 +68,18 @@ SKYWORK
 去除特殊字符  
 去除中文占比低的段落  
 去除编码异常段落  
+
+### SFT 数据推荐
+alpaca-zh     
+地址：https://huggingface.co/datasets/shibing624/alpaca-zh
+BelleGroup  
+地址：https://huggingface.co/datasets/BelleGroup/train_1M_CN 
+firefly    
+地址：https://huggingface.co/datasets/YeungNLP/firefly-train-1.1M  
+COIG-CQIA  
+地址：https://huggingface.co/datasets/m-a-p/COIG-CQIA
+
+
 
 ## 详细文档
 [预训练](documents/预训练原理.md)  
