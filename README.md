@@ -88,3 +88,8 @@ COIG-CQIA
 https://github.com/DLLXW/baby-llama2-chinese  
 https://github.com/LlamaFamily/Llama-Chinese  
 https://github.com/SkyworkAI/Skywork
+
+## 其他有用的工具推荐
+[Circle Crop - 免费在线圆形裁剪图片工具](https://circlecrop.io/)
+circle crop image Transform your photos with our advanced circle crop image tool. Create perfect circle avatars, profile pictures, and more with precision control and instant high-quality results.
+
