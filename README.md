@@ -98,3 +98,12 @@ circle crop image Transform your photos with our advanced circle crop image tool
 [imageo verlay tool can put image on image](https://imageoverlay.net/)  Experience the power of our technology. Create stunning overlay image compositions with precision blending control and instant results for professional overlay image projects.
 
 [fish eat fish game](https://fisheatfish.org/) its a very interesting game
+
+[banana prompts](https://bananaprompts.org/) Browse our curated collection of tested prompt templates. Find the perfect prompt, copy it with one click, and create stunning images.
+
+[hair filter](https://hairfilter.net/) change hairstyle free
+
+[picture to drawing](https://picturetodrawing.net) Effortlessly convert your images into various artistic styles. From classic sketches to modern digital art, let our AI bring your creative visions to life.
+
+
+
